@@ -53,7 +53,7 @@ var DownloadLocation string
 
 func main() {
 	flag.StringVar(&DownloadLocation, "downloadLocation", "", "The location to download your files")
-	flag.StringVar(&API_KEY, "key", "", "Your itchi.io API key")
+	flag.StringVar(&API_KEY, "key", "", "Your itch.io API key")
 	flag.Parse()
 
 	if API_KEY == "" {

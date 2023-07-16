@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/cavaliergopher/grab/v3"
@@ -47,8 +49,10 @@ type Uuid struct {
 }
 
 var API_KEY string
+var DownloadLocation string
 
 func main() {
+	flag.StringVar(&DownloadLocation, "downloadLocation", "", "The location to download your files")
 	flag.StringVar(&API_KEY, "key", "", "Your itchi.io API key")
 	flag.Parse()
 
@@ -58,42 +62,44 @@ func main() {
 
 	client := http.Client{}
 	var p Page
-	pageRaw, _ := MakeRequest("GET", client, "profile/owned-keys?page=1", nil)
-
+	pageRaw := MakeRequest("GET", client, "profile/owned-keys?page=1", nil)
 	err := json.Unmarshal(pageRaw, &p)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	for i, v := range p.OwnedKeys {
-		if i == 0 {
-			var files GameFiles
-			filesRaw, err := MakeRequest("GET", client, "games/"+strconv.Itoa(v.GameId)+"/uploads?download_key_id="+strconv.Itoa(v.Id), nil)
-			if err != nil {
-				log.Fatalln(err)
-			}
-			err = json.Unmarshal(filesRaw, &files)
-			if err != nil {
-				log.Fatalln(err)
-			}
+	for _, v := range p.OwnedKeys {
+		var files GameFiles
+		filesRaw := MakeRequest("GET", client, "games/"+strconv.Itoa(v.GameId)+"/uploads?download_key_id="+strconv.Itoa(v.Id), nil)
+		err = json.Unmarshal(filesRaw, &files)
+		if err != nil {
+			log.Fatalln(err)
+		}
 
+		var location string
+		if DownloadLocation != "" {
+			location = filepath.Join(DownloadLocation, files.Uploads[0].FileName)
+		} else {
+			location = files.Uploads[0].FileName
+		}
+
+		if FileExists(location) {
+			fmt.Printf("%s exists. Skipping download.\n", location)
+		} else {
 			var u Uuid
-			uuidRaw, err := MakeRequest("POST", client, "games/"+strconv.Itoa(files.Uploads[0].Id)+"/download-sessions", DownloadSession{DownloadKeyId: v.Id})
-			if err != nil {
-				log.Fatalln(err)
-			}
+			uuidRaw := MakeRequest("POST", client, "games/"+strconv.Itoa(files.Uploads[0].Id)+"/download-sessions", DownloadSession{DownloadKeyId: v.Id})
 			err = json.Unmarshal(uuidRaw, &u)
 			if err != nil {
 				log.Fatalln(err)
 			}
 
-			DownloadFile(files.Uploads[0].FileName, "uploads/"+strconv.Itoa(files.Uploads[0].Id)+"/download?api_key="+API_KEY+"&download_key_id="+strconv.Itoa(v.Id)+"&uuid="+u.Uuid)
+			DownloadFile(location, "uploads/"+strconv.Itoa(files.Uploads[0].Id)+"/download?api_key="+API_KEY+"&download_key_id="+strconv.Itoa(v.Id)+"&uuid="+u.Uuid)
 		}
 	}
 }
 
-func DownloadFile(name string, url string) {
-	resp, err := grab.Get("./"+name, "https://api.itch.io/"+url)
+func DownloadFile(location string, url string) {
+	resp, err := grab.Get(location, "https://api.itch.io/"+url)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -101,7 +107,15 @@ func DownloadFile(name string, url string) {
 	fmt.Println("Download saved to", resp.Filename)
 }
 
-func MakeRequest(method string, client http.Client, url string, bodyReq interface{}) ([]byte, error) {
+func FileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
+}
+
+func MakeRequest(method string, client http.Client, url string, bodyReq interface{}) []byte {
 	var requestBody io.Reader
 
 	if bodyReq != nil {
@@ -133,5 +147,5 @@ func MakeRequest(method string, client http.Client, url string, bodyReq interfac
 		log.Fatalln(err)
 	}
 
-	return body, nil
+	return body
 }

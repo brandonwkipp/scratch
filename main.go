@@ -50,15 +50,19 @@ type Uuid struct {
 
 var API_KEY string
 var DownloadLocation string
+var Verbose bool
 
 func main() {
 	flag.StringVar(&DownloadLocation, "downloadLocation", "", "The location to download your files")
 	flag.StringVar(&API_KEY, "key", "", "Your itch.io API key")
+	flag.BoolVar(&Verbose, "verbose", false, "Print extra information")
 	flag.Parse()
 
 	if API_KEY == "" {
 		log.Fatal("Usage: main.go -key \"YOUR_KEY\"")
 	}
+
+	DownloadCount := 0
 
 	client := http.Client{}
 	var p Page
@@ -84,7 +88,9 @@ func main() {
 		}
 
 		if FileExists(location) {
-			fmt.Printf("%s exists. Skipping download.\n", location)
+			if Verbose == true {
+				log.Printf("%s exists. Skipping download.\n", location)
+			}
 		} else {
 			var u Uuid
 			uuidRaw := MakeRequest("POST", client, "games/"+strconv.Itoa(files.Uploads[0].Id)+"/download-sessions", DownloadSession{DownloadKeyId: v.Id})
@@ -94,7 +100,16 @@ func main() {
 			}
 
 			DownloadFile(location, "uploads/"+strconv.Itoa(files.Uploads[0].Id)+"/download?api_key="+API_KEY+"&download_key_id="+strconv.Itoa(v.Id)+"&uuid="+u.Uuid)
+			DownloadCount = DownloadCount + 1
 		}
+	}
+
+	if DownloadCount == 0 {
+		fmt.Print("Nothing downloaded\n")
+	} else if DownloadCount == 1 {
+		fmt.Print("Downloaded 1 file\n")
+	} else if DownloadCount > 1 {
+		fmt.Printf("Downloaded %v files\n", DownloadCount)
 	}
 }
 
@@ -104,7 +119,9 @@ func DownloadFile(location string, url string) {
 		log.Fatal(err)
 	}
 
-	fmt.Println("Download saved to", resp.Filename)
+	if Verbose == true {
+		log.Printf("Downloaded %s successfully", resp.Filename)
+	}
 }
 
 func FileExists(filename string) bool {
@@ -128,7 +145,6 @@ func MakeRequest(method string, client http.Client, url string, bodyReq interfac
 	}
 
 	req, err := http.NewRequest(method, "https://api.itch.io/"+url, requestBody)
-	log.Println("https://api.itch.io/" + url)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -140,6 +156,10 @@ func MakeRequest(method string, client http.Client, url string, bodyReq interfac
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalln(err)
+	}
+
+	if Verbose == true {
+		log.Printf("%s https://api.itch.io/"+url+" %v\n", method, resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
